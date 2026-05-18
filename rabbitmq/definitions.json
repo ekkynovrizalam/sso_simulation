@@ -1,0 +1,18 @@
+{
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "iae.central.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ]
+}

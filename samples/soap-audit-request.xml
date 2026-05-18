@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:iae="http://iae.central/audit">
+  <soap:Body>
+    <iae:AuditRequest>
+      <iae:TeamID>TEAM-01</iae:TeamID>
+      <iae:ActivityName>ShipmentCreated</iae:ActivityName>
+      <iae:LogContent><![CDATA[{"order_id":"ORD-8842","origin":"JKT","destination":"SBY","weight_kg":12.5}]]></iae:LogContent>
+    </iae:AuditRequest>
+  </soap:Body>
+</soap:Envelope>

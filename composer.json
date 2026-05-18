@@ -1,0 +1,16 @@
+{
+    "name": "iae/central-mock-server",
+    "description": "Central Corporate System mock for EAI university course",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "slim/slim": "^4.14",
+        "slim/psr7": "^1.7",
+        "php-amqplib/php-amqplib": "^3.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "Iae\\Central\\": "src/"
+        }
+    }
+}

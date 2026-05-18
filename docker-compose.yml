@@ -1,0 +1,62 @@
+services:
+  mock-server:
+    build: .
+    container_name: iae-central-mock
+    ports:
+      - "${MOCK_SERVER_PORT:-8080}:8080"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-iae-central-mock-secret-change-in-production}
+      JWT_TTL: ${JWT_TTL:-3600}
+      DB_PATH: /var/www/data/activity.db
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_EXCHANGE: iae.central.exchange
+      ADMIN_KEY: ${ADMIN_KEY:-admin-iae-dashboard}
+    volumes:
+      - mock_data:/var/www/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${MOCK_CPU_LIMIT:-0.50}"
+          memory: "${MOCK_MEM_LIMIT:-128M}"
+        reservations:
+          cpus: "${MOCK_CPU_RESERVE:-0.10}"
+          memory: "${MOCK_MEM_RESERVE:-64M}"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: iae-rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbitmq_management load_definitions "/etc/rabbitmq/definitions.json"
+    volumes:
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${RABBITMQ_CPU_LIMIT:-1.00}"
+          memory: "${RABBITMQ_MEM_LIMIT:-512M}"
+        reservations:
+          cpus: "${RABBITMQ_CPU_RESERVE:-0.25}"
+          memory: "${RABBITMQ_MEM_RESERVE:-256M}"
+
+volumes:
+  mock_data:

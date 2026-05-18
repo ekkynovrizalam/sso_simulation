@@ -1,0 +1,204 @@
+# Testing the Central Mock Server (Postman)
+
+## Start the stack
+
+```bash
+cp .env.example .env   # optional — defaults work
+docker compose up --build
+```
+
+| Service        | URL                                      |
+|----------------|------------------------------------------|
+| Mock API       | http://localhost:8080                    |
+| RabbitMQ UI    | http://localhost:15672 (guest / guest) |
+| Admin dashboard| http://localhost:8080/api/admin/dashboard |
+
+---
+
+## 1. Central SSO — dual mode (`POST /api/v1/auth/token`)
+
+Endpoint ini mendukung **dua skenario** pada URL yang sama.
+
+### 1A. Machine-to-Machine (Laravel microservice)
+
+Digunakan saat aplikasi Laravel mahasiswa memanggil Central System sebagai **client aplikasi**.
+
+- Method: `POST`
+- URL: `http://localhost:8080/api/v1/auth/token`
+- Headers: `Content-Type: application/json`
+- Body:
+
+```json
+{
+  "api_key": "KEY-MHS-01"
+}
+```
+
+**Expected (200)**
+
+```json
+{
+  "status": "success",
+  "token_type": "m2m",
+  "grant_type": "client_credentials",
+  "token": "eyJ...",
+  "expires_in": 3600,
+  "app": {
+    "client_id": "KEY-MHS-01",
+    "name": "Laravel Service — Smart Logistics",
+    "team": "TEAM-01"
+  }
+}
+```
+
+JWT payload berisi info aplikasi (`app.client_id`, `app.name`, `app.team`). **Tidak ada role** — role ditentukan lokal di Laravel mahasiswa.
+
+**Negative:** `"api_key": "KEY-INVALID"` → `401`
+
+---
+
+### 1B. End-User SSO (Simulasi KTP Digital Global)
+
+Digunakan saat **warga kota / pengguna akhir** login dengan email & password.
+
+- Body:
+
+```json
+{
+  "email": "warga01@ktp.iae.id",
+  "password": "KtpDigital2026!"
+}
+```
+
+**Expected (200)**
+
+```json
+{
+  "status": "success",
+  "token_type": "user",
+  "grant_type": "password",
+  "token": "eyJ...",
+  "expires_in": 3600,
+  "profile": {
+    "name": "Ahmad Rizki Pratama",
+    "nim": "2026000001",
+    "email": "warga01@ktp.iae.id"
+  }
+}
+```
+
+JWT meng-embed `profile` (name, nim, email) — **tanpa field role**.
+
+**Akun mock:** 41 warga di `config/citizens.php` (`warga01@ktp.iae.id` … `warga41@ktp.iae.id`), password lab: `KtpDigital2026!`
+
+**Negative:** email/password salah → `401`
+
+**Prioritas:** Jika body memuat `api_key` yang tidak kosong, server memproses sebagai **M2M** (bukan End-User).
+
+---
+
+## 2. SOAP Audit — generic industry schema
+
+Skema **one-size-fits-all** untuk 13 tema industri: wajib ada `<TeamID>`, `<ActivityName>`, `<LogContent>`.
+
+- Method: `POST`
+- URL: `http://localhost:8080/soap/v1/audit`
+- Headers:
+  - `Content-Type: text/xml` (atau `application/soap+xml`)
+  - `Authorization: Bearer <token dari langkah 1 — M2M atau User>`
+- Body (raw XML):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:iae="http://iae.central/audit">
+  <soap:Body>
+    <iae:AuditRequest>
+      <iae:TeamID>TEAM-01</iae:TeamID>
+      <iae:ActivityName>ShipmentCreated</iae:ActivityName>
+      <iae:LogContent><![CDATA[{"order_id":"ORD-8842","origin":"JKT","destination":"SBY","weight_kg":12.5}]]></iae:LogContent>
+    </iae:AuditRequest>
+  </soap:Body>
+</soap:Envelope>
+```
+
+`<LogContent>` boleh berisi **CDATA JSON**, XML mentah, atau teks bebas — data transaksi spesifik tema mahasiswa.
+
+**Expected (200)** — SOAP Envelope:
+
+```xml
+<iae:Status>SUCCESS</iae:Status>
+<iae:ReceiptNumber>IAE-LOG-2026-8891A7BC</iae:ReceiptNumber>
+```
+
+Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-8891A7BC`).
+
+**Negative tests**
+
+| Test | Expected |
+|------|----------|
+| Body JSON + `Content-Type: application/json` | `415` + SOAP Fault |
+| Tanpa header `Authorization` | `401` + SOAP Fault |
+| Token invalid/expired | `401` + SOAP Fault |
+| Tag wajib hilang (mis. tanpa `ActivityName`) | `400` + SOAP Fault |
+
+---
+
+## 3. RabbitMQ — publish a message
+
+- Method: `POST`
+- URL: `http://localhost:8080/api/v1/messages/publish`
+- Headers:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer <token M2M atau User>`
+- Body:
+
+```json
+{
+  "routing_key": "iae.event.transaction",
+  "message": {
+    "activity_name": "ShipmentCreated",
+    "receipt_ref": "IAE-LOG-2026-8891A7BC"
+  }
+}
+```
+
+**Expected (200)**
+
+```json
+{
+  "status": "success",
+  "exchange": "iae.central.exchange",
+  "routing_key": "iae.event.transaction"
+}
+```
+
+---
+
+## 4. Instructor admin dashboard
+
+- Method: `GET`
+- URL: `http://localhost:8080/api/admin/dashboard`
+- Header: `X-Admin-Key: admin-iae-dashboard`
+
+Menampilkan ringkasan per subject (API key atau email warga) dan log SSO M2M / SSO User / SOAP / RabbitMQ.
+
+---
+
+## Quick health check
+
+```bash
+curl -s http://localhost:8080/health
+```
+
+---
+
+## Student Laravel integration hints
+
+| Integration | Auth | Notes |
+|-------------|------|--------|
+| M2M token | `api_key` di body | Untuk service-to-service |
+| User token | `email` + `password` | Simulasi login warga KTP Digital |
+| SOAP audit | Bearer token | XML generic: TeamID, ActivityName, LogContent |
+| RabbitMQ | Bearer token | Publish via mock API atau AMQP langsung |
+
+Di Docker Compose network, gunakan hostname `mock-server` dan `rabbitmq` (bukan `localhost`).
