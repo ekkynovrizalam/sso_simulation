@@ -34,7 +34,7 @@ Mahasiswa mengimplementasikan **konsumen** di Laravel; server ini adalah **penye
                     │         ▼                  ▼                    ▼          │
                     │  ┌─────────────────────────────────────────────────────┐ │
                     │  │ AuthService · SoapAuditService · RabbitMqService    │ │
-                    │  │ ActivityLogger (SQLite) · JwtCodec (HS256)          │ │
+                    │  │ ActivityLogger · JwtCodec (RS256) · RsaKeyManager   │ │
                     │  └─────────────────────────────────────────────────────┘ │
                     └────────────────────────────┬────────────────────────────┘
                                                  │ AMQP publish
@@ -72,7 +72,9 @@ Satu endpoint `POST /api/v1/auth/token` — dua mode:
             (SOAP XML + Bearer)          (JSON + Bearer)                  di Laravel)
 ```
 
-**Role tidak disertakan di JWT pusat** — penentuan RBAC dilakukan di aplikasi Laravel mahasiswa setelah decode token.
+**Role tidak disertakan di JWT pusat** — penentuan RBAC dilakukan di aplikasi Laravel mahasiswa setelah **verify RS256** via JWKS.
+
+Mahasiswa **tidak** menerima private key — hanya `GET /api/v1/auth/jwks` (public key). Baca `profile` dari JWT secara lokal setelah verify; tidak perlu panggil pusat tiap request.
 
 ---
 
@@ -87,6 +89,7 @@ docker compose up --build -d
 |---------|-----|--------------|
 | Mock API | http://localhost:8080 | Lihat [TESTING.md](TESTING.md) |
 | Health | http://localhost:8080/health | — |
+| JWKS | http://localhost:8080/api/v1/auth/jwks | Public key (verify JWT) |
 | Admin dashboard | http://localhost:8080/api/admin/dashboard | Header `X-Admin-Key` |
 | RabbitMQ UI | http://localhost:15672 | User/pass dari `.env` |
 
@@ -100,6 +103,8 @@ docker compose up --build -d
 | Method | Path | Auth | Deskripsi |
 |--------|------|------|-----------|
 | `GET` | `/health` | — | Health check JSON |
+| `GET` | `/api/v1/auth/jwks` | — | Public keys (RS256) untuk verify JWT |
+| `GET` | `/.well-known/jwks.json` | — | Alias JWKS (OIDC-style) |
 | `POST` | `/api/v1/auth/token` | Body | **M2M:** `{ "api_key": "KEY-MHS-01" }` |
 | | | | **User:** `{ "email": "warga01@ktp.iae.id", "password": "..." }` |
 | `POST` | `/soap/v1/audit` | Bearer | Audit XML generic (lihat skema di bawah) |
@@ -159,7 +164,8 @@ sso_simulation/
 │   │   └── HealthController.php
 │   └── Services/
 │       ├── AuthService.php     # Dual SSO + JWT validate
-│       ├── JwtCodec.php
+│       ├── JwtCodec.php        # RS256 sign/verify
+│       ├── RsaKeyManager.php   # Key pair + JWKS export
 │       ├── SoapAuditService.php
 │       ├── RabbitMqService.php
 │       └── ActivityLogger.php  # SQLite audit trail
@@ -180,7 +186,7 @@ sso_simulation/
 |----------|---------|---------|
 | Runtime | PHP 8.2 (Alpine) | Built-in server di container |
 | Framework | Slim 4 | Routing + middleware |
-| JWT | HS256 (`JwtCodec`) | Tanpa dependency eksternal |
+| JWT | RS256 (`JwtCodec` + `RsaKeyManager`) | Private key di volume; JWKS untuk mahasiswa |
 | Log aktivitas | SQLite | Volume Docker `mock_data` |
 | Message broker | RabbitMQ 3.13 + management | Exchange `iae.central.exchange` |
 | Orkestrasi | Docker Compose | Resource limits per service |
@@ -194,7 +200,8 @@ Salin [.env.example](.env.example) ke `.env`:
 | Variable | Fungsi |
 |----------|--------|
 | `MOCK_SERVER_PORT` | Port mock API (default `8080`) |
-| `JWT_SECRET` | Signing key JWT — **wajib diganti** di lab shared |
+| `JWT_KEYS_DIR` | Path RSA key pair (default `/var/www/data/keys`) |
+| `JWT_KID` | Key ID di header JWT & JWKS |
 | `JWT_TTL` | Masa berlaku token detik (default `3600`) |
 | `ADMIN_KEY` | Akses dashboard dosen |
 | `RABBITMQ_USER` / `RABBITMQ_PASS` | Kredensial broker |
@@ -223,8 +230,9 @@ Sesuaikan via `.env`. Pantau: `docker stats iae-central-mock iae-rabbitmq`
 
 1. **Service call:** `POST /api/v1/auth/token` dengan `api_key` tim → simpan Bearer token.  
 2. **User login (opsional):** `email` + `password` warga → JWT berisi `profile`.  
-3. **SOAP:** kirim XML ke `/soap/v1/audit` — jangan pakai JSON.  
-4. **Event:** `POST /api/v1/messages/publish` atau AMQP langsung ke exchange topic.
+3. **Verify JWT:** ambil public key dari `GET /api/v1/auth/jwks` → verify RS256 di Laravel → baca `profile` lokal.  
+4. **SOAP:** kirim XML ke `/soap/v1/audit` — jangan pakai JSON.  
+5. **Event:** `POST /api/v1/messages/publish` atau AMQP langsung ke exchange topic.
 
 ---
 

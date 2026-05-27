@@ -2,7 +2,7 @@
 
 Dokumen ini berlaku untuk **dosen/pengelola lab** dan **mahasiswa** yang menggunakan mock server ini pada mata kuliah EAI.
 
-> **Penting:** Sistem ini adalah **simulator pembelajaran**, bukan produk keamanan siap produksi. Desainnya sengaja disederhanakan (static API key, password lab bersama, JWT HS256) agar fokus ke integrasi REST · SOAP · AMQP — **bukan** untuk di-deploy ke internet publik tanpa kontrol.
+> **Penting:** Sistem ini adalah **simulator pembelajaran**, bukan produk keamanan siap produksi. JWT memakai **RS256 + JWKS** (public key dibagikan, private key hanya di server pusat). Tetap ada risiko lab (API key statis, password warga bersama) — **bukan** untuk internet publik tanpa kontrol.
 
 ---
 
@@ -25,14 +25,14 @@ Centang semua item sebelum mahasiswa mengakses server bersama.
 ### 1. Secret & kredensial
 
 - [ ] Salin `.env.example` → `.env` — **jangan** commit file `.env`
-- [ ] Ganti `JWT_SECRET` (min. 32 karakter acak)
 - [ ] Ganti `ADMIN_KEY` (acak, hanya dosen yang tahu)
 - [ ] Ganti `RABBITMQ_USER` dan `RABBITMQ_PASS` (bukan `guest/guest` di server shared)
+- [ ] Pastikan volume `mock_data` menyimpan RSA key (`/var/www/data/keys/*.pem`) — **jangan** commit file `.pem` ke Git
+- [ ] **Jangan** bagikan `private.pem` ke mahasiswa — hanya URL JWKS (`/api/v1/auth/jwks`)
 
 Contoh generate secret (macOS/Linux):
 
 ```bash
-openssl rand -hex 32   # untuk JWT_SECRET
 openssl rand -hex 24   # untuk ADMIN_KEY
 ```
 
@@ -75,7 +75,7 @@ openssl rand -hex 24   # untuk ADMIN_KEY
 ### Tidak boleh
 
 - Mem-publish stack ini ke VPS publik tanpa izin dosen
-- Membagikan API key, `ADMIN_KEY`, atau `JWT_SECRET` ke luar tim
+- Membagikan API key, `ADMIN_KEY`, atau file `private.pem` ke luar tim
 - Brute-force endpoint `/api/v1/auth/token` atau dashboard admin
 - Mengisi RabbitMQ dengan spam / pesan berukuran sangat besar
 - Menganggap mock ini sebagai standar keamanan industri (OAuth2, MFA, RBAC pusat, dll.)
@@ -86,7 +86,7 @@ openssl rand -hex 24   # untuk ADMIN_KEY
 |-------------|-------------------|
 | API key statis | OAuth2 client credentials + rotasi secret |
 | Password warga sama | Hash bcrypt/argon2, kebijakan password |
-| JWT HS256 secret tunggal | RS256, JWKS, expiry + refresh token |
+| JWT RS256 (JWKS public) | Rotasi key, refresh token, introspection |
 | HTTP | HTTPS wajib (TLS 1.2+) |
 | Guest RabbitMQ | User/role terpisah, TLS, vhost isolation |
 
@@ -131,7 +131,7 @@ Letakkan nginx/Caddy di depan mock server; terminate TLS di proxy. Mahasiswa mem
 | Ancaman | Dampak di lab | Mitigasi |
 |---------|---------------|----------|
 | API key bocor | Orang lain pakai identitas tim | Key per tim, rotate, jangan commit ke Git |
-| JWT secret bocor | Pemalsuan token | Ganti `JWT_SECRET`, restart container |
+| `private.pem` bocor | Pemalsuan token | Hapus keys di volume, restart (generate ulang), invalidate token lama |
 | Abuse RabbitMQ | Queue penuh, resource habis | Firewall port AMQP, password kuat, limit resource |
 | Sniffing HTTP | Token terbaca di jaringan | HTTPS atau jaringan lab terisolasi |
 | Scanning internet | Brute force auth | Jangan expose publik; rate limit (opsional) |
@@ -144,7 +144,7 @@ Jika ada aktivitas mencurigakan di dashboard admin (banyak SSO gagal, publish ma
 
 1. Catat waktu, subject/API key, dan event type dari log
 2. Rotate API key tim yang terdampak di `config/api_keys.php`
-3. Ganti `JWT_SECRET` + `ADMIN_KEY` di `.env`, lalu `docker compose up --build -d`
+3. Hapus volume keys + ganti `ADMIN_KEY` di `.env`, lalu `docker compose down -v` dan `docker compose up --build -d`
 4. Restart RabbitMQ jika perlu: `docker compose restart rabbitmq`
 5. Laporkan ke dosen / asisten lab
 
@@ -154,7 +154,7 @@ Jika ada aktivitas mencurigakan di dashboard admin (banyak SSO gagal, publish ma
 
 | Item | Frekuensi |
 |------|-----------|
-| `JWT_SECRET`, `ADMIN_KEY`, RabbitMQ password | Setiap semester |
+| RSA key pair (volume `keys/`), `ADMIN_KEY`, RabbitMQ password | Setiap semester |
 | API key per kelompok | Setiap semester / setiap proyek |
 | Password warga di `citizens.php` | Opsional (beri tahu mahasiswa jika diubah) |
 | Volume SQLite log (`mock_data`) | Reset setelah semester (`docker compose down -v`) |
@@ -178,7 +178,8 @@ Bisa — `LogContent` SOAP dan profil SSO. Jangan publish dump database ke publi
 
 | File / variabel | Isi sensitif |
 |-----------------|--------------|
-| `.env` | JWT secret, admin key, RabbitMQ password |
+| `.env` | Admin key, RabbitMQ password |
+| `data/keys/private.pem` | **RAHASIA** — signing JWT RS256 |
 | `config/api_keys.php` | M2M keys per tim |
 | `config/citizens.php` | Email & password lab warga |
 | Volume `mock_data` | SQLite activity log |

@@ -17,7 +17,7 @@ COPY config ./config
 COPY public ./public
 COPY src ./src
 
-RUN mkdir -p /var/www/data && chown -R www-data:www-data /var/www/data
+RUN mkdir -p /var/www/data/keys && chown -R www-data:www-data /var/www/data
 
 ENV DB_PATH=/var/www/data/activity.db
 

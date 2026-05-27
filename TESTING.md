@@ -12,6 +12,54 @@ docker compose up --build
 | Mock API       | http://localhost:8080                    |
 | RabbitMQ UI    | http://localhost:15672 (guest / guest) |
 | Admin dashboard| http://localhost:8080/api/admin/dashboard |
+| JWKS (public key)| http://localhost:8080/api/v1/auth/jwks |
+
+---
+
+## 0. JWT — RS256 + JWKS (untuk mahasiswa Laravel)
+
+Token ditandatangani **RS256**. **Private key hanya di server pusat** — mahasiswa **tidak** menerima `JWT_SECRET`.
+
+| Yang dibagikan ke mahasiswa | Fungsi |
+|-----------------------------|--------|
+| URL JWKS | Ambil **public key** untuk verify signature |
+| Isi JWT setelah login | Baca `profile` / `app` **lokal** (tanpa panggil pusat lagi) |
+
+**Cek JWKS:**
+
+```bash
+curl -s http://localhost:8080/api/v1/auth/jwks | jq
+```
+
+Alias OIDC: `GET /.well-known/jwks.json`
+
+**Verify di Laravel (ringkas):**
+
+```bash
+composer require firebase/php-jwt
+```
+
+```php
+use Firebase\JWT\JWK;
+use Firebase\JWT\JWT;
+
+$jwks = json_decode(
+    file_get_contents('http://localhost:8080/api/v1/auth/jwks'),
+    true,
+    512,
+    JSON_THROW_ON_ERROR
+);
+$keys = JWK::parseKeySet($jwks);
+$decoded = JWT::decode($bearerToken, $keys);
+
+// End-User SSO
+$profile = (array) ($decoded->profile ?? []);
+
+// M2M
+$app = (array) ($decoded->app ?? []);
+```
+
+Setelah verify sukses → assign **role lokal** di Laravel (tidak ada role di JWT pusat).
 
 ---
 
@@ -41,6 +89,8 @@ Digunakan saat aplikasi Laravel mahasiswa memanggil Central System sebagai **cli
   "status": "success",
   "token_type": "m2m",
   "grant_type": "client_credentials",
+  "algorithm": "RS256",
+  "jwks_uri": "/api/v1/auth/jwks",
   "token": "eyJ...",
   "expires_in": 3600,
   "app": {
@@ -77,6 +127,8 @@ Digunakan saat **warga kota / pengguna akhir** login dengan email & password.
   "status": "success",
   "token_type": "user",
   "grant_type": "password",
+  "algorithm": "RS256",
+  "jwks_uri": "/api/v1/auth/jwks",
   "token": "eyJ...",
   "expires_in": 3600,
   "profile": {
@@ -196,6 +248,7 @@ curl -s http://localhost:8080/health
 
 | Integration | Auth | Notes |
 |-------------|------|--------|
+| JWKS | — | `GET /api/v1/auth/jwks` — verify RS256, **tanpa** private key |
 | M2M token | `api_key` di body | Untuk service-to-service |
 | User token | `email` + `password` | Simulasi login warga KTP Digital |
 | SOAP audit | Bearer token | XML generic: TeamID, ActivityName, LogContent |

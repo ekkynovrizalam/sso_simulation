@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 return [
-    'jwt_secret' => getenv('JWT_SECRET') ?: 'iae-central-mock-secret-change-in-production',
+    'jwt_keys_dir' => getenv('JWT_KEYS_DIR') ?: '/var/www/data/keys',
+    'jwt_kid' => getenv('JWT_KID') ?: 'iae-central-2026',
     'jwt_ttl' => (int) (getenv('JWT_TTL') ?: 3600),
     'db_path' => getenv('DB_PATH') ?: '/var/www/data/activity.db',
     'rabbitmq' => [

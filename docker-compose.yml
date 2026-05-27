@@ -5,7 +5,8 @@ services:
     ports:
       - "${MOCK_SERVER_PORT:-8080}:8080"
     environment:
-      JWT_SECRET: ${JWT_SECRET:-iae-central-mock-secret-change-in-production}
+      JWT_KEYS_DIR: /var/www/data/keys
+      JWT_KID: ${JWT_KID:-iae-central-2026}
       JWT_TTL: ${JWT_TTL:-3600}
       DB_PATH: /var/www/data/activity.db
       RABBITMQ_HOST: rabbitmq

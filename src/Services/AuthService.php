@@ -15,10 +15,10 @@ final class AuthService
     public function __construct(
         private readonly array $apiKeys,
         private readonly array $citizens,
-        private readonly string $jwtSecret,
+        RsaKeyManager $keys,
         private readonly int $jwtTtl,
     ) {
-        $this->jwt = new JwtCodec($jwtSecret);
+        $this->jwt = new JwtCodec($keys);
     }
 
     public function isValidApiKey(string $apiKey): bool

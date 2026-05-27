@@ -62,6 +62,8 @@ final class AuthController
             'status' => 'success',
             'token_type' => 'm2m',
             'grant_type' => 'client_credentials',
+            'algorithm' => 'RS256',
+            'jwks_uri' => '/api/v1/auth/jwks',
             'token' => $token,
             'expires_in' => $this->jwtTtl,
             'app' => [
@@ -99,6 +101,8 @@ final class AuthController
             'status' => 'success',
             'token_type' => 'user',
             'grant_type' => 'password',
+            'algorithm' => 'RS256',
+            'jwks_uri' => '/api/v1/auth/jwks',
             'token' => $token,
             'expires_in' => $this->jwtTtl,
             'profile' => $profile,
