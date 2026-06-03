@@ -7,6 +7,7 @@ namespace Iae\Central;
 use Iae\Central\Controllers\AdminController;
 use Iae\Central\Controllers\AuthController;
 use Iae\Central\Controllers\HealthController;
+use Iae\Central\Controllers\LandingController;
 use Iae\Central\Controllers\JwksController;
 use Iae\Central\Controllers\MessageController;
 use Iae\Central\Controllers\SoapAuditController;
@@ -58,7 +59,9 @@ final class AppBootstrap
         $messageController = new MessageController($authService, $rabbitMq, $logger);
         $adminController = new AdminController($logger, $appConfig['admin_key']);
         $healthController = new HealthController();
+        $landingController = new LandingController();
 
+        $app->get('/', [$landingController, 'index']);
         $app->get('/health', [$healthController, 'check']);
         $app->get('/api/v1/auth/jwks', [$jwksController, 'jwks']);
         $app->get('/.well-known/jwks.json', [$jwksController, 'jwks']);
