@@ -38,13 +38,7 @@ final class RabbitMqService
         $channel = $connection->channel();
 
         try {
-            $channel->exchange_declare(
-                $this->exchange,
-                'topic',
-                false,
-                true,
-                false
-            );
+            $this->ensureBoardInfrastructure($channel);
 
             $body = json_encode($payload, JSON_THROW_ON_ERROR);
             $message = new AMQPMessage($body, [
@@ -71,6 +65,7 @@ final class RabbitMqService
             $channel = $connection->channel();
 
             try {
+                $this->ensureBoardInfrastructure($channel);
                 [, $messageCount] = $channel->queue_declare($this->boardQueue, true);
                 $messages = [];
                 $fetched = 0;
@@ -110,5 +105,12 @@ final class RabbitMqService
                 'messages' => [],
             ];
         }
+    }
+
+    private function ensureBoardInfrastructure(\PhpAmqpLib\Channel\AMQPChannel $channel): void
+    {
+        $channel->exchange_declare($this->exchange, 'topic', false, true, false);
+        $channel->queue_declare($this->boardQueue, false, true, false, false);
+        $channel->queue_bind($this->boardQueue, $this->exchange, '#');
     }
 }
