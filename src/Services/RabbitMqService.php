@@ -68,9 +68,10 @@ final class RabbitMqService
                 $this->ensureBoardInfrastructure($channel);
                 [, $messageCount] = $channel->queue_declare($this->boardQueue, true);
                 $messages = [];
-                $fetched = 0;
+                $deliveryTags = [];
+                $toFetch = min($limit, (int) $messageCount);
 
-                while ($fetched < $limit) {
+                for ($i = 0; $i < $toFetch; ++$i) {
                     $envelope = $channel->basic_get($this->boardQueue, false);
                     if ($envelope === null) {
                         break;
@@ -81,8 +82,11 @@ final class RabbitMqService
                         'routing_key' => $envelope->getRoutingKey(),
                         'payload' => is_array($decoded) ? $decoded : ['body' => $envelope->getBody()],
                     ];
-                    $channel->basic_nack($envelope->getDeliveryTag(), false, true);
-                    ++$fetched;
+                    $deliveryTags[] = $envelope->getDeliveryTag();
+                }
+
+                foreach ($deliveryTags as $tag) {
+                    $channel->basic_nack($tag, false, true);
                 }
 
                 return [
