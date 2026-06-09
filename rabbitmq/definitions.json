@@ -14,5 +14,24 @@
       "internal": false,
       "arguments": {}
     }
+  ],
+  "queues": [
+    {
+      "name": "iae.lab.board",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "iae.central.exchange",
+      "vhost": "/",
+      "destination": "iae.lab.board",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    }
   ]
 }

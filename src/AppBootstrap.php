@@ -6,6 +6,7 @@ namespace Iae\Central;
 
 use Iae\Central\Controllers\AdminController;
 use Iae\Central\Controllers\AuthController;
+use Iae\Central\Controllers\BoardController;
 use Iae\Central\Controllers\HealthController;
 use Iae\Central\Controllers\LandingController;
 use Iae\Central\Controllers\JwksController;
@@ -46,6 +47,7 @@ final class AppBootstrap
             $appConfig['rabbitmq']['user'],
             $appConfig['rabbitmq']['pass'],
             $appConfig['rabbitmq']['exchange'],
+            $appConfig['rabbitmq']['board_queue'],
         );
 
         $app = AppFactory::create();
@@ -58,16 +60,19 @@ final class AppBootstrap
         $soapController = new SoapAuditController($authService, $soapService, $logger);
         $messageController = new MessageController($authService, $rabbitMq, $logger);
         $adminController = new AdminController($logger, $appConfig['admin_key']);
-        $healthController = new HealthController();
+        $boardController = new BoardController($rabbitMq, $appConfig['rabbitmq']['exchange']);
+        $healthController = new HealthController($rabbitMq);
         $landingController = new LandingController();
 
         $app->get('/', [$landingController, 'index']);
+        $app->get('/board', [$boardController, 'index']);
         $app->get('/health', [$healthController, 'check']);
         $app->get('/api/v1/auth/jwks', [$jwksController, 'jwks']);
         $app->get('/.well-known/jwks.json', [$jwksController, 'jwks']);
         $app->post('/api/v1/auth/token', [$authController, 'token']);
         $app->post('/soap/v1/audit', [$soapController, 'audit']);
         $app->post('/api/v1/messages/publish', [$messageController, 'publish']);
+        $app->get('/api/v1/messages/board', [$boardController, 'json']);
         $app->get('/api/admin/dashboard', [$adminController, 'dashboard']);
 
         return $app;

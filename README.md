@@ -91,6 +91,7 @@ docker compose up --build -d
 | Health | http://localhost:8080/health | — |
 | JWKS | http://localhost:8080/api/v1/auth/jwks | Public key (verify JWT) |
 | Admin dashboard | http://localhost:8080/api/admin/dashboard | Header `X-Admin-Key` |
+| **Papan pengumuman RabbitMQ** | http://localhost:8080/board | — (buka di browser, auto-refresh) |
 | RabbitMQ UI | http://localhost:15672 | User/pass dari `.env` |
 
 **Dokumentasi uji Postman:** [TESTING.md](TESTING.md)  
@@ -109,6 +110,8 @@ docker compose up --build -d
 | | | | **User:** `{ "email": "warga01@ktp.iae.id", "password": "..." }` |
 | `POST` | `/soap/v1/audit` | Bearer | Audit XML generic (lihat skema di bawah) |
 | `POST` | `/api/v1/messages/publish` | Bearer | Publish ke `iae.central.exchange` |
+| `GET` | `/board` | — | Papan pengumuman — lihat pesan di queue lab |
+| `GET` | `/api/v1/messages/board` | — | JSON papan pengumuman (untuk skrip/automasi) |
 | `GET` | `/api/admin/dashboard` | `X-Admin-Key` | Log aktivitas HTML (dosen) |
 
 ### SOAP audit — skema generic (13 tema industri)

@@ -32,7 +32,7 @@ final class MessageController
         }
 
         $body = (array) ($request->getParsedBody() ?? []);
-        $routingKey = trim((string) ($body['routing_key'] ?? 'iae.event.transaction'));
+        $routingKey = trim((string) ($body['routing_key'] ?? ''));
         $message = $body['message'] ?? $body['payload'] ?? null;
 
         if (!is_array($message) && !is_string($message)) {

@@ -15,7 +15,21 @@ final class RabbitMqService
         private readonly string $user,
         private readonly string $pass,
         private readonly string $exchange,
+        private readonly string $boardQueue,
     ) {
+    }
+
+    /** @return array{ok: bool, error: ?string} */
+    public function ping(): array
+    {
+        try {
+            $connection = new AMQPStreamConnection($this->host, $this->port, $this->user, $this->pass);
+            $connection->close();
+
+            return ['ok' => true, 'error' => null];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
     }
 
     public function publish(string $routingKey, array $payload): void
@@ -42,6 +56,59 @@ final class RabbitMqService
         } finally {
             $channel->close();
             $connection->close();
+        }
+    }
+
+    /**
+     * Peek messages on the lab bulletin-board queue (re-queued after read).
+     *
+     * @return array{ok: bool, error: ?string, queue: string, message_count: int, messages: list<array<string, mixed>>}
+     */
+    public function peekBoard(int $limit = 20): array
+    {
+        try {
+            $connection = new AMQPStreamConnection($this->host, $this->port, $this->user, $this->pass);
+            $channel = $connection->channel();
+
+            try {
+                [, $messageCount] = $channel->queue_declare($this->boardQueue, true);
+                $messages = [];
+                $fetched = 0;
+
+                while ($fetched < $limit) {
+                    $envelope = $channel->basic_get($this->boardQueue, false);
+                    if ($envelope === null) {
+                        break;
+                    }
+
+                    $decoded = json_decode($envelope->getBody(), true);
+                    $messages[] = [
+                        'routing_key' => $envelope->getRoutingKey(),
+                        'payload' => is_array($decoded) ? $decoded : ['body' => $envelope->getBody()],
+                    ];
+                    $channel->basic_nack($envelope->getDeliveryTag(), false, true);
+                    ++$fetched;
+                }
+
+                return [
+                    'ok' => true,
+                    'error' => null,
+                    'queue' => $this->boardQueue,
+                    'message_count' => (int) $messageCount,
+                    'messages' => array_reverse($messages),
+                ];
+            } finally {
+                $channel->close();
+                $connection->close();
+            }
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'error' => $e->getMessage(),
+                'queue' => $this->boardQueue,
+                'message_count' => 0,
+                'messages' => [],
+            ];
         }
     }
 }

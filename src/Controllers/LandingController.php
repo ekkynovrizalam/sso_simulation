@@ -207,6 +207,12 @@ final class LandingController
           </tr>
           <tr>
             <td><span class="method get">GET</span></td>
+            <td><code>/board</code></td>
+            <td>—</td>
+            <td>Papan pengumuman — cek pesan sudah sampai di queue</td>
+          </tr>
+          <tr>
+            <td><span class="method get">GET</span></td>
             <td><code>/api/admin/dashboard</code></td>
             <td><code>X-Admin-Key</code></td>
             <td>Log aktivitas HTML (dosen)</td>
@@ -216,6 +222,7 @@ final class LandingController
     </section>
 
     <div class="links">
+      <a href="/board">Papan pengumuman RabbitMQ</a>
       <a href="/health">Health check</a>
       <a href="/api/v1/auth/jwks">JWKS</a>
     </div>

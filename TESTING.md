@@ -10,6 +10,7 @@ docker compose up --build
 | Service        | URL                                      |
 |----------------|------------------------------------------|
 | Mock API       | http://localhost:8080                    |
+| **Papan pengumuman RabbitMQ** | http://localhost:8080/board |
 | RabbitMQ UI    | http://localhost:15672 (guest / guest) |
 | Admin dashboard| http://localhost:8080/api/admin/dashboard |
 | JWKS (public key)| http://localhost:8080/api/v1/auth/jwks |
@@ -206,7 +207,7 @@ Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-
 
 ```json
 {
-  "routing_key": "iae.event.transaction",
+  "routing_key": "ShipmentCreated",
   "message": {
     "activity_name": "ShipmentCreated",
     "receipt_ref": "IAE-LOG-2026-8891A7BC"
@@ -220,8 +221,31 @@ Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-
 {
   "status": "success",
   "exchange": "iae.central.exchange",
-  "routing_key": "iae.event.transaction"
+  "routing_key": "ShipmentCreated"
 }
+```
+
+`routing_key` opsional — boleh apa saja atau dikosongkan. Yang wajib: pesan dipublish ke exchange `iae.central.exchange`.
+
+### Cara cek sukses / gagal (paling praktis)
+
+Buka **papan pengumuman** di browser:
+
+- URL: http://localhost:8080/board
+- Auto-refresh setiap 5 detik
+
+| Yang Anda lihat | Artinya |
+|-----------------|---------|
+| Status **Tidak terkoneksi** (merah) | RabbitMQ belum jalan atau kredensial salah — cek `docker compose ps` |
+| Status **Terhubung — belum ada pesan** (kuning) | Broker OK, tapi pesan Anda belum sampai — cek nama exchange |
+| Kartu pesan muncul dengan nama tim/API key Anda (hijau) | **Berhasil** — pesan sudah masuk queue `iae.lab.board` |
+
+Pastikan publish ke exchange `iae.central.exchange`. Routing key bebas (tidak ada pola khusus).
+
+Alternatif JSON API:
+
+```bash
+curl -s http://localhost:8080/api/v1/messages/board
 ```
 
 ---
@@ -242,6 +266,8 @@ Menampilkan ringkasan per subject (API key atau email warga) dan log SSO M2M / S
 curl -s http://localhost:8080/health
 ```
 
+Response mencakup status koneksi RabbitMQ dan jumlah pesan di papan (`message_count`).
+
 ---
 
 ## Student Laravel integration hints
@@ -252,6 +278,6 @@ curl -s http://localhost:8080/health
 | M2M token | `api_key` di body | Untuk service-to-service |
 | User token | `email` + `password` | Simulasi login warga KTP Digital |
 | SOAP audit | Bearer token | XML generic: TeamID, ActivityName, LogContent |
-| RabbitMQ | Bearer token | Publish via mock API atau AMQP langsung |
+| RabbitMQ | Bearer token | Publish via mock API atau AMQP langsung; verifikasi di `/board` |
 
 Di Docker Compose network, gunakan hostname `mock-server` dan `rabbitmq` (bukan `localhost`).

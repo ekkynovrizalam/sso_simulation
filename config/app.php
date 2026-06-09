@@ -13,6 +13,7 @@ return [
         'user' => getenv('RABBITMQ_USER') ?: 'guest',
         'pass' => getenv('RABBITMQ_PASS') ?: 'guest',
         'exchange' => getenv('RABBITMQ_EXCHANGE') ?: 'iae.central.exchange',
+        'board_queue' => getenv('RABBITMQ_BOARD_QUEUE') ?: 'iae.lab.board',
     ],
     'admin_key' => getenv('ADMIN_KEY') ?: 'admin-iae-dashboard',
 ];
