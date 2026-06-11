@@ -72,19 +72,25 @@ final class BoardController
         }
 
         $cards = '';
+        $cardCount = count($board['messages']);
         foreach ($board['messages'] as $entry) {
-            $routingKey = htmlspecialchars((string) ($entry['routing_key'] ?? '—'), ENT_QUOTES, 'UTF-8');
+            $routingKeyRaw = (string) ($entry['routing_key'] ?? '—');
+            $routingKey = htmlspecialchars($routingKeyRaw, ENT_QUOTES, 'UTF-8');
             $payload = $entry['payload'] ?? [];
-            $subject = htmlspecialchars($this->formatSubject($payload), ENT_QUOTES, 'UTF-8');
-            $publishedAt = htmlspecialchars((string) ($payload['published_at'] ?? '—'), ENT_QUOTES, 'UTF-8');
-            $messageBody = htmlspecialchars(
-                json_encode($payload['message'] ?? $payload, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+            $subjectRaw = $this->formatSubject($payload);
+            $subject = htmlspecialchars($subjectRaw, ENT_QUOTES, 'UTF-8');
+            $publishedAtRaw = (string) ($payload['published_at'] ?? '—');
+            $publishedAt = htmlspecialchars($publishedAtRaw, ENT_QUOTES, 'UTF-8');
+            $jsonRaw = json_encode($payload['message'] ?? $payload, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            $messageBody = htmlspecialchars($jsonRaw, ENT_QUOTES, 'UTF-8');
+            $searchable = htmlspecialchars(
+                mb_strtolower($routingKeyRaw . ' ' . $subjectRaw . ' ' . $publishedAtRaw . ' ' . $jsonRaw, 'UTF-8'),
                 ENT_QUOTES,
                 'UTF-8',
             );
 
             $cards .= <<<HTML
-            <article class="card">
+            <article class="card" data-searchable="{$searchable}">
               <header>
                 <span class="rk">{$routingKey}</span>
                 <time>{$publishedAt}</time>
@@ -233,6 +239,76 @@ final class BoardController
     }
     footer a { color: var(--accent); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
+    .search-bar {
+      margin-bottom: 1.25rem;
+      padding: 1rem 1.1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .search-bar label {
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 600;
+      margin-bottom: 0.45rem;
+    }
+    .search-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .search-row input {
+      flex: 1;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+    }
+    .search-row input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+    }
+    .search-row input::placeholder { color: var(--muted); }
+    .search-row button {
+      padding: 0.55rem 0.85rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .search-row button:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    .search-hint {
+      margin: 0.45rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    #search-status {
+      margin: 0.35rem 0 0;
+      font-size: 0.82rem;
+      color: var(--accent);
+      min-height: 1.2em;
+    }
+    .card.is-hidden { display: none; }
+    .no-search-results {
+      display: none;
+      text-align: center;
+      padding: 2rem 1rem;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      color: var(--muted);
+    }
+    .no-search-results.is-visible { display: block; }
+    .no-search-results p { margin: 0; }
   </style>
 </head>
 <body>
@@ -257,7 +333,26 @@ final class BoardController
       <span>Auto-refresh: 5 detik</span>
     </div>
 
-    <div class="grid">{$cards}</div>
+    <div class="search-bar">
+      <label for="board-search">Cari di body JSON, routing key, atau pengirim</label>
+      <div class="search-row">
+        <input
+          type="search"
+          id="board-search"
+          placeholder="Contoh: nim, team-a, hello world, routing.key…"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <button type="button" id="board-search-clear" title="Hapus pencarian">Hapus</button>
+      </div>
+      <p class="search-hint">Pencarian tidak peka huruf besar/kecil. Cocokkan teks apa pun di dalam JSON body.</p>
+      <p id="search-status" aria-live="polite"></p>
+    </div>
+
+    <div class="grid" id="board-grid" data-total="{$cardCount}">{$cards}</div>
+    <div class="no-search-results" id="no-search-results">
+      <p>Tidak ada pesan yang cocok dengan pencarian Anda.</p>
+    </div>
 
     <footer>
       <a href="/">← Beranda mock server</a>
@@ -265,6 +360,62 @@ final class BoardController
       <a href="/health">Health check</a>
     </footer>
   </div>
+  <script>
+    (function () {
+      const STORAGE_KEY = 'iae-board-search';
+      const input = document.getElementById('board-search');
+      const clearBtn = document.getElementById('board-search-clear');
+      const status = document.getElementById('search-status');
+      const grid = document.getElementById('board-grid');
+      const noResults = document.getElementById('no-search-results');
+      if (!input || !grid) return;
+
+      const total = parseInt(grid.dataset.total || '0', 10);
+      const cards = Array.from(grid.querySelectorAll('.card[data-searchable]'));
+
+      function applyFilter() {
+        const query = input.value.trim().toLowerCase();
+        sessionStorage.setItem(STORAGE_KEY, input.value);
+
+        if (query === '') {
+          cards.forEach(function (card) { card.classList.remove('is-hidden'); });
+          if (noResults) noResults.classList.remove('is-visible');
+          if (status) status.textContent = total > 0 ? 'Menampilkan semua ' + total + ' pesan.' : '';
+          return;
+        }
+
+        let visible = 0;
+        cards.forEach(function (card) {
+          const haystack = card.dataset.searchable || '';
+          const match = haystack.indexOf(query) !== -1;
+          card.classList.toggle('is-hidden', !match);
+          if (match) visible += 1;
+        });
+
+        if (noResults) {
+          noResults.classList.toggle('is-visible', visible === 0 && cards.length > 0);
+        }
+        if (status) {
+          status.textContent = visible + ' dari ' + total + ' pesan cocok dengan "' + input.value.trim() + '".';
+        }
+      }
+
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        input.value = saved;
+      }
+
+      input.addEventListener('input', applyFilter);
+      clearBtn.addEventListener('click', function () {
+        input.value = '';
+        sessionStorage.removeItem(STORAGE_KEY);
+        input.focus();
+        applyFilter();
+      });
+
+      applyFilter();
+    })();
+  </script>
 </body>
 </html>
 HTML;
