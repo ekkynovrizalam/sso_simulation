@@ -196,13 +196,13 @@ final class LandingController
           <tr>
             <td><span class="method post">POST</span></td>
             <td><code>/soap/v1/audit</code></td>
-            <td>Bearer</td>
+            <td>Bearer M2M</td>
             <td>Audit XML generic</td>
           </tr>
           <tr>
             <td><span class="method post">POST</span></td>
             <td><code>/api/v1/messages/publish</code></td>
-            <td>Bearer</td>
+            <td>Bearer M2M</td>
             <td>Publish ke exchange RabbitMQ</td>
           </tr>
           <tr>

@@ -41,6 +41,10 @@ final class SoapAuditController
             return $this->soapFault($response, 'soap:Client', 'Unauthorized: Invalid or expired Bearer token.', 401);
         }
 
+        if ($identity['token_type'] !== 'm2m') {
+            return $this->soapFault($response, 'soap:Client', 'Forbidden: M2M Bearer token required.', 403);
+        }
+
         $xmlBody = (string) $request->getBody();
         if (trim($xmlBody) === '') {
             return $this->soapFault($response, 'soap:Client', 'Empty SOAP request body.', 400);

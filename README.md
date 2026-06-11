@@ -58,18 +58,17 @@ Satu endpoint `POST /api/v1/auth/token` — dua mode:
 └─────────────────────┘                  │  payload: app{}  │
                                          └────────┬─────────┘
                                                   │
-┌─────────────────────┐   email+password          │ Bearer
-│ Warga / Mahasiswa   │ ───────────────► ┌────────▼─────────┐
-│ (KTP Digital Global)│                  │  JWT token_type  │
-└─────────────────────┘                  │      = user      │
-                                         │ payload: profile│
-                                         │ (no role field) │
-                                         └────────┬─────────┘
+┌─────────────────────┐   email+password          │
+│ Warga / Mahasiswa   │ ───────────────► JWT token_type = user (profile)
+│ (KTP Digital Global)│                  └──► role lokal di Laravel mahasiswa
+└─────────────────────┘
                                                   │
-                    ┌─────────────────────────────┼─────────────────────────────┐
-                    ▼                             ▼                             ▼
-            POST /soap/v1/audit          POST /api/v1/messages/publish     (role lokal
-            (SOAP XML + Bearer)          (JSON + Bearer)                  di Laravel)
+                                         Bearer M2M only
+                                                  │
+                    ┌─────────────────────────────┴─────────────────────────────┐
+                    ▼                                                           ▼
+            POST /soap/v1/audit                              POST /api/v1/messages/publish
+            (SOAP XML + Bearer M2M)                          (JSON + Bearer M2M)
 ```
 
 **Role tidak disertakan di JWT pusat** — penentuan RBAC dilakukan di aplikasi Laravel mahasiswa setelah **verify RS256** via JWKS.
@@ -108,8 +107,8 @@ docker compose up --build -d
 | `GET` | `/.well-known/jwks.json` | — | Alias JWKS (OIDC-style) |
 | `POST` | `/api/v1/auth/token` | Body | **M2M:** `{ "api_key": "KEY-MHS-01" }` |
 | | | | **User:** `{ "email": "warga01@ktp.iae.id", "password": "..." }` |
-| `POST` | `/soap/v1/audit` | Bearer | Audit XML generic (lihat skema di bawah) |
-| `POST` | `/api/v1/messages/publish` | Bearer | Publish ke `iae.central.exchange` |
+| `POST` | `/soap/v1/audit` | Bearer M2M | Audit XML generic (lihat skema di bawah) |
+| `POST` | `/api/v1/messages/publish` | Bearer M2M | Publish ke `iae.central.exchange` |
 | `GET` | `/board` | — | Papan pengumuman — lihat pesan di queue lab |
 | `GET` | `/api/v1/messages/board` | — | JSON papan pengumuman (untuk skrip/automasi) |
 | `GET` | `/api/admin/dashboard` | `X-Admin-Key` | Log aktivitas HTML (dosen) |

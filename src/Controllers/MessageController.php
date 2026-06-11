@@ -31,6 +31,13 @@ final class MessageController
             return $this->json($response, ['status' => 'error', 'message' => 'Unauthorized'], 401);
         }
 
+        if ($identity['token_type'] !== 'm2m') {
+            return $this->json($response, [
+                'status' => 'error',
+                'message' => 'Forbidden: M2M Bearer token required.',
+            ], 403);
+        }
+
         $body = (array) ($request->getParsedBody() ?? []);
         $routingKey = trim((string) ($body['routing_key'] ?? ''));
         $message = $body['message'] ?? $body['payload'] ?? null;

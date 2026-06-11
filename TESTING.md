@@ -158,7 +158,7 @@ Skema **one-size-fits-all** untuk 13 tema industri: wajib ada `<TeamID>`, `<Acti
 - URL: `http://localhost:8080/soap/v1/audit`
 - Headers:
   - `Content-Type: text/xml` (atau `application/soap+xml`)
-  - `Authorization: Bearer <token dari langkah 1 — M2M atau User>`
+  - `Authorization: Bearer <token M2M dari langkah 1A>`
 - Body (raw XML):
 
 ```xml
@@ -192,6 +192,7 @@ Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-
 | Body JSON + `Content-Type: application/json` | `415` + SOAP Fault |
 | Tanpa header `Authorization` | `401` + SOAP Fault |
 | Token invalid/expired | `401` + SOAP Fault |
+| Token End-User (bukan M2M) | `403` + SOAP Fault |
 | Tag wajib hilang (mis. tanpa `ActivityName`) | `400` + SOAP Fault |
 
 ---
@@ -202,7 +203,7 @@ Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-
 - URL: `http://localhost:8080/api/v1/messages/publish`
 - Headers:
   - `Content-Type: application/json`
-  - `Authorization: Bearer <token M2M atau User>`
+  - `Authorization: Bearer <token M2M dari langkah 1A>`
 - Body:
 
 ```json
@@ -226,6 +227,8 @@ Format nomor resi: `IAE-LOG-2026-` + 8 karakter hex acak (contoh: `IAE-LOG-2026-
 ```
 
 `routing_key` opsional — boleh apa saja atau dikosongkan. Yang wajib: pesan dipublish ke exchange `iae.central.exchange`.
+
+**Negative:** Bearer token End-User (langkah 1B, bukan M2M) → `403` + `{ "status": "error", "message": "Forbidden: M2M Bearer token required." }`
 
 ### Cara cek sukses / gagal (paling praktis)
 
@@ -277,7 +280,7 @@ Response mencakup status koneksi RabbitMQ dan jumlah pesan di papan (`message_co
 | JWKS | — | `GET /api/v1/auth/jwks` — verify RS256, **tanpa** private key |
 | M2M token | `api_key` di body | Untuk service-to-service |
 | User token | `email` + `password` | Simulasi login warga KTP Digital |
-| SOAP audit | Bearer token | XML generic: TeamID, ActivityName, LogContent |
-| RabbitMQ | Bearer token | Publish via mock API atau AMQP langsung; verifikasi di `/board` |
+| SOAP audit | Bearer M2M | XML generic: TeamID, ActivityName, LogContent |
+| RabbitMQ | Bearer M2M | Publish via mock API atau AMQP langsung; verifikasi di `/board` |
 
 Di Docker Compose network, gunakan hostname `mock-server` dan `rabbitmq` (bukan `localhost`).
