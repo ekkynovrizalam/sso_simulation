@@ -69,7 +69,9 @@ final class RabbitMqService
                 [, $messageCount] = $channel->queue_declare($this->boardQueue, true);
                 $messages = [];
                 $deliveryTags = [];
-                $toFetch = min($limit, (int) $messageCount);
+                $toFetch = $limit <= 0
+                    ? (int) $messageCount
+                    : min($limit, (int) $messageCount);
 
                 for ($i = 0; $i < $toFetch; ++$i) {
                     $envelope = $channel->basic_get($this->boardQueue, false);

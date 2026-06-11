@@ -73,6 +73,7 @@ final class AppBootstrap
         $app->post('/soap/v1/audit', [$soapController, 'audit']);
         $app->post('/api/v1/messages/publish', [$messageController, 'publish']);
         $app->get('/api/v1/messages/board', [$boardController, 'json']);
+        $app->get('/api/v1/messages/board/search', [$boardController, 'search']);
         $app->get('/api/admin/dashboard', [$adminController, 'dashboard']);
 
         return $app;

@@ -10,6 +10,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 final class BoardController
 {
+    private const DISPLAY_LIMIT = 30;
+
     public function __construct(
         private readonly RabbitMqService $rabbitMq,
         private readonly string $exchange,
@@ -18,15 +20,57 @@ final class BoardController
 
     public function index(Request $request, Response $response): Response
     {
-        $board = $this->rabbitMq->peekBoard(30);
+        $board = $this->rabbitMq->peekBoard(self::DISPLAY_LIMIT);
         $response->getBody()->write($this->renderHtml($board));
 
         return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
+    public function search(Request $request, Response $response): Response
+    {
+        $query = trim((string) ($request->getQueryParams()['q'] ?? ''));
+        $board = $this->rabbitMq->peekBoard(0);
+
+        if (!$board['ok']) {
+            $payload = [
+                'status' => 'error',
+                'error' => $board['error'],
+                'queue_total' => 0,
+                'match_count' => 0,
+                'messages' => [],
+            ];
+
+            $response->getBody()->write((string) json_encode($payload, JSON_THROW_ON_ERROR));
+
+            return $response
+                ->withHeader('Content-Type', 'application/json')
+                ->withStatus(503);
+        }
+
+        $needle = mb_strtolower($query, 'UTF-8');
+        $matches = $needle === ''
+            ? $board['messages']
+            : array_values(array_filter(
+                $board['messages'],
+                fn (array $entry): bool => $this->entryMatchesQuery($entry, $needle),
+            ));
+
+        $payload = [
+            'status' => 'ok',
+            'query' => $query,
+            'queue_total' => $board['message_count'],
+            'match_count' => count($matches),
+            'messages' => $matches,
+        ];
+
+        $response->getBody()->write((string) json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
     public function json(Request $request, Response $response): Response
     {
-        $board = $this->rabbitMq->peekBoard(30);
+        $board = $this->rabbitMq->peekBoard(self::DISPLAY_LIMIT);
 
         $payload = [
             'status' => $board['ok'] ? 'ok' : 'error',
@@ -74,31 +118,7 @@ final class BoardController
         $cards = '';
         $cardCount = count($board['messages']);
         foreach ($board['messages'] as $entry) {
-            $routingKeyRaw = (string) ($entry['routing_key'] ?? '—');
-            $routingKey = htmlspecialchars($routingKeyRaw, ENT_QUOTES, 'UTF-8');
-            $payload = $entry['payload'] ?? [];
-            $subjectRaw = $this->formatSubject($payload);
-            $subject = htmlspecialchars($subjectRaw, ENT_QUOTES, 'UTF-8');
-            $publishedAtRaw = (string) ($payload['published_at'] ?? '—');
-            $publishedAt = htmlspecialchars($publishedAtRaw, ENT_QUOTES, 'UTF-8');
-            $jsonRaw = json_encode($payload['message'] ?? $payload, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-            $messageBody = htmlspecialchars($jsonRaw, ENT_QUOTES, 'UTF-8');
-            $searchable = htmlspecialchars(
-                mb_strtolower($routingKeyRaw . ' ' . $subjectRaw . ' ' . $publishedAtRaw . ' ' . $jsonRaw, 'UTF-8'),
-                ENT_QUOTES,
-                'UTF-8',
-            );
-
-            $cards .= <<<HTML
-            <article class="card" data-searchable="{$searchable}">
-              <header>
-                <span class="rk">{$routingKey}</span>
-                <time>{$publishedAt}</time>
-              </header>
-              <p class="from">Dari: <strong>{$subject}</strong></p>
-              <pre>{$messageBody}</pre>
-            </article>
-            HTML;
+            $cards .= $this->renderCard($entry);
         }
 
         if ($cards === '') {
@@ -345,11 +365,11 @@ final class BoardController
         >
         <button type="button" id="board-search-clear" title="Hapus pencarian">Hapus</button>
       </div>
-      <p class="search-hint">Pencarian tidak peka huruf besar/kecil. Cocokkan teks apa pun di dalam JSON body.</p>
+      <p class="search-hint">Pencarian tidak peka huruf besar/kecil. Mencari di seluruh <strong>{$messageCount}</strong> pesan di queue (bukan hanya yang tampil di bawah).</p>
       <p id="search-status" aria-live="polite"></p>
     </div>
 
-    <div class="grid" id="board-grid" data-total="{$cardCount}">{$cards}</div>
+    <div class="grid" id="board-grid" data-displayed="{$cardCount}" data-queue-total="{$messageCount}">{$cards}</div>
     <div class="no-search-results" id="no-search-results">
       <p>Tidak ada pesan yang cocok dengan pencarian Anda.</p>
     </div>
@@ -363,6 +383,7 @@ final class BoardController
   <script>
     (function () {
       const STORAGE_KEY = 'iae-board-search';
+      const SEARCH_URL = '/api/v1/messages/board/search';
       const input = document.getElementById('board-search');
       const clearBtn = document.getElementById('board-search-clear');
       const status = document.getElementById('search-status');
@@ -370,55 +391,178 @@ final class BoardController
       const noResults = document.getElementById('no-search-results');
       if (!input || !grid) return;
 
-      const total = parseInt(grid.dataset.total || '0', 10);
-      const cards = Array.from(grid.querySelectorAll('.card[data-searchable]'));
+      const displayed = parseInt(grid.dataset.displayed || '0', 10);
+      const queueTotal = parseInt(grid.dataset.queueTotal || '0', 10);
+      const defaultGridHtml = grid.innerHTML;
+      let debounceTimer = null;
+      let searchRequestId = 0;
 
-      function applyFilter() {
-        const query = input.value.trim().toLowerCase();
-        sessionStorage.setItem(STORAGE_KEY, input.value);
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
 
-        if (query === '') {
-          cards.forEach(function (card) { card.classList.remove('is-hidden'); });
-          if (noResults) noResults.classList.remove('is-visible');
-          if (status) status.textContent = total > 0 ? 'Menampilkan semua ' + total + ' pesan.' : '';
+      function formatSubject(payload) {
+        if (payload.team) return payload.team;
+        if (payload.subject) return payload.subject;
+        if (payload.api_key) return payload.api_key;
+        return 'Unknown publisher';
+      }
+
+      function renderCard(entry) {
+        const payload = entry.payload || {};
+        const routingKey = entry.routing_key || '—';
+        const subject = formatSubject(payload);
+        const publishedAt = payload.published_at || '—';
+        const messageBody = JSON.stringify(payload.message || payload, null, 2);
+
+        return (
+          '<article class="card">' +
+            '<header>' +
+              '<span class="rk">' + escapeHtml(routingKey) + '</span>' +
+              '<time>' + escapeHtml(publishedAt) + '</time>' +
+            '</header>' +
+            '<p class="from">Dari: <strong>' + escapeHtml(subject) + '</strong></p>' +
+            '<pre>' + escapeHtml(messageBody) + '</pre>' +
+          '</article>'
+        );
+      }
+
+      function setDefaultStatus() {
+        if (!status) return;
+        if (queueTotal === 0) {
+          status.textContent = '';
           return;
         }
-
-        let visible = 0;
-        cards.forEach(function (card) {
-          const haystack = card.dataset.searchable || '';
-          const match = haystack.indexOf(query) !== -1;
-          card.classList.toggle('is-hidden', !match);
-          if (match) visible += 1;
-        });
-
-        if (noResults) {
-          noResults.classList.toggle('is-visible', visible === 0 && cards.length > 0);
+        if (queueTotal <= displayed) {
+          status.textContent = 'Menampilkan semua ' + queueTotal + ' pesan di queue.';
+          return;
         }
-        if (status) {
-          status.textContent = visible + ' dari ' + total + ' pesan cocok dengan "' + input.value.trim() + '".';
-        }
+        status.textContent = 'Menampilkan ' + displayed + ' pesan terbaru dari ' + queueTotal + ' pesan di queue.';
+      }
+
+      function restoreDefaultView() {
+        grid.innerHTML = defaultGridHtml;
+        if (noResults) noResults.classList.remove('is-visible');
+        setDefaultStatus();
+      }
+
+      function runSearch(query) {
+        const requestId = ++searchRequestId;
+        if (status) status.textContent = 'Mencari di seluruh ' + queueTotal + ' pesan…';
+
+        fetch(SEARCH_URL + '?q=' + encodeURIComponent(query))
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (requestId !== searchRequestId) return;
+
+            if (data.status !== 'ok') {
+              if (status) status.textContent = 'Pencarian gagal: ' + (data.error || 'broker tidak tersedia');
+              return;
+            }
+
+            const matches = data.messages || [];
+            grid.innerHTML = matches.map(renderCard).join('');
+
+            if (noResults) {
+              noResults.classList.toggle('is-visible', matches.length === 0 && queueTotal > 0);
+            }
+            if (status) {
+              status.textContent = matches.length + ' dari ' + data.queue_total + ' pesan cocok dengan "' + query + '".';
+            }
+          })
+          .catch(function () {
+            if (requestId !== searchRequestId) return;
+            if (status) status.textContent = 'Pencarian gagal. Coba lagi.';
+          });
+      }
+
+      function handleInput() {
+        const query = input.value.trim();
+        sessionStorage.setItem(STORAGE_KEY, input.value);
+        clearTimeout(debounceTimer);
+
+        debounceTimer = setTimeout(function () {
+          if (query === '') {
+            restoreDefaultView();
+            return;
+          }
+          runSearch(query);
+        }, 300);
       }
 
       const saved = sessionStorage.getItem(STORAGE_KEY);
       if (saved) {
         input.value = saved;
+        if (saved.trim() !== '') {
+          runSearch(saved.trim());
+        } else {
+          setDefaultStatus();
+        }
+      } else {
+        setDefaultStatus();
       }
 
-      input.addEventListener('input', applyFilter);
+      input.addEventListener('input', handleInput);
       clearBtn.addEventListener('click', function () {
         input.value = '';
         sessionStorage.removeItem(STORAGE_KEY);
+        searchRequestId += 1;
+        clearTimeout(debounceTimer);
+        restoreDefaultView();
         input.focus();
-        applyFilter();
       });
-
-      applyFilter();
     })();
   </script>
 </body>
 </html>
 HTML;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function renderCard(array $entry): string
+    {
+        $routingKey = htmlspecialchars((string) ($entry['routing_key'] ?? '—'), ENT_QUOTES, 'UTF-8');
+        $payload = $entry['payload'] ?? [];
+        $subject = htmlspecialchars($this->formatSubject($payload), ENT_QUOTES, 'UTF-8');
+        $publishedAt = htmlspecialchars((string) ($payload['published_at'] ?? '—'), ENT_QUOTES, 'UTF-8');
+        $messageBody = htmlspecialchars(
+            json_encode($payload['message'] ?? $payload, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+            ENT_QUOTES,
+            'UTF-8',
+        );
+
+        return <<<HTML
+            <article class="card">
+              <header>
+                <span class="rk">{$routingKey}</span>
+                <time>{$publishedAt}</time>
+              </header>
+              <p class="from">Dari: <strong>{$subject}</strong></p>
+              <pre>{$messageBody}</pre>
+            </article>
+            HTML;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function entryMatchesQuery(array $entry, string $needle): bool
+    {
+        return str_contains($this->buildSearchableText($entry), $needle);
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function buildSearchableText(array $entry): string
+    {
+        $routingKey = (string) ($entry['routing_key'] ?? '');
+        $payload = $entry['payload'] ?? [];
+        $subject = $this->formatSubject($payload);
+        $publishedAt = (string) ($payload['published_at'] ?? '');
+        $jsonRaw = json_encode($payload['message'] ?? $payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+        return mb_strtolower($routingKey . ' ' . $subject . ' ' . $publishedAt . ' ' . $jsonRaw, 'UTF-8');
     }
 
     /** @param array<string, mixed> $payload */
