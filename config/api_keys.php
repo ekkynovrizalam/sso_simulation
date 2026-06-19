@@ -30,7 +30,17 @@ return [
     'KEY-MHS-45' => [
         'student' => '102022400023, 102022400033',
         'team' => 'TEAM-06',
-        'app_name' => 'Laravel Service — Group 6 (102022400023, 102022400033)',
+        'app_name' => 'Laravel Service — Shared (102022400023, 102022400033)',
+        'members' => [
+            '102022400023' => [
+                'team' => 'TEAM-06',
+                'app_name' => 'Laravel Service — Team 6 (102022400023)',
+            ],
+            '102022400033' => [
+                'team' => 'TEAM-07',
+                'app_name' => 'Laravel Service — Team 7 (102022400033)',
+            ],
+        ],
     ],
     'KEY-MHS-50' => [
         'student' => '102022400005',
@@ -350,7 +360,17 @@ return [
     'KEY-MHS-367' => [
         'student' => '102022400280, 102022400313',
         'team' => 'TEAM-03',
-        'app_name' => 'Laravel Service — Group 3 (102022400280, 102022400313)',
+        'app_name' => 'Laravel Service — Shared (102022400280, 102022400313)',
+        'members' => [
+            '102022400280' => [
+                'team' => 'TEAM-09',
+                'app_name' => 'Laravel Service — Team 9 (102022400280)',
+            ],
+            '102022400313' => [
+                'team' => 'TEAM-03',
+                'app_name' => 'Laravel Service — Team 3 (102022400313)',
+            ],
+        ],
     ],
     'KEY-MHS-376' => [
         'student' => '102022400283',

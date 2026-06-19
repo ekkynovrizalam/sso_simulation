@@ -79,9 +79,14 @@ Digunakan saat aplikasi Laravel mahasiswa memanggil Central System sebagai **cli
 
 ```json
 {
-  "api_key": "KEY-MHS-01"
+  "api_key": "KEY-MHS-25",
+  "nim": "102022430014"
 }
 ```
+
+Field `nim` **wajib** untuk semua M2M request. Untuk key biasa, `nim` harus cocok dengan NIM pemilik key. Untuk **shared key** (`KEY-MHS-45`, `KEY-MHS-367`), `nim` harus terdaftar di key tersebut.
+
+Tanpa `nim` → `400`. NIM tidak cocok → `401`.
 
 **Expected (200)**
 
@@ -95,16 +100,17 @@ Digunakan saat aplikasi Laravel mahasiswa memanggil Central System sebagai **cli
   "token": "eyJ...",
   "expires_in": 3600,
   "app": {
-    "client_id": "KEY-MHS-01",
-    "name": "Laravel Service — Smart Logistics",
-    "team": "TEAM-01"
+    "client_id": "KEY-MHS-25",
+    "name": "Laravel Service — Group 11 (102022430014)",
+    "team": "TEAM-11",
+    "nim": "102022430014"
   }
 }
 ```
 
-JWT payload berisi info aplikasi (`app.client_id`, `app.name`, `app.team`). **Tidak ada role** — role ditentukan lokal di Laravel mahasiswa.
+JWT payload berisi info aplikasi (`app.client_id`, `app.name`, `app.team`, `app.nim`). **Tidak ada role** — role ditentukan lokal di Laravel mahasiswa.
 
-**Negative:** `"api_key": "KEY-INVALID"` → `401`
+**Negative:** `"api_key": "KEY-INVALID"` → `401` · tanpa `nim` → `400` · `nim` salah → `401`
 
 ---
 
@@ -278,7 +284,7 @@ Response mencakup status koneksi RabbitMQ dan jumlah pesan di papan (`message_co
 | Integration | Auth | Notes |
 |-------------|------|--------|
 | JWKS | — | `GET /api/v1/auth/jwks` — verify RS256, **tanpa** private key |
-| M2M token | `api_key` di body | Untuk service-to-service |
+| M2M token | `api_key` + `nim` di body | Untuk service-to-service |
 | User token | `email` + `password` | Simulasi login warga KTP Digital |
 | SOAP audit | Bearer M2M | XML generic: TeamID, ActivityName, LogContent |
 | RabbitMQ | Bearer M2M | Publish via mock API atau AMQP langsung; verifikasi di `/board` |

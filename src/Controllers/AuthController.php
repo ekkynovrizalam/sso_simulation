@@ -26,7 +26,9 @@ final class AuthController
         $password = (string) ($body['password'] ?? '');
 
         if ($apiKey !== '') {
-            return $this->issueM2m($response, $apiKey);
+            $nim = trim((string) ($body['nim'] ?? ''));
+
+            return $this->issueM2m($response, $apiKey, $nim);
         }
 
         if ($email !== '' && $password !== '') {
@@ -39,7 +41,7 @@ final class AuthController
         ], 400);
     }
 
-    private function issueM2m(Response $response, string $apiKey): Response
+    private function issueM2m(Response $response, string $apiKey, string $nim): Response
     {
         if (!$this->authService->isValidApiKey($apiKey)) {
             return $this->json($response, [
@@ -48,15 +50,42 @@ final class AuthController
             ], 401);
         }
 
-        $token = $this->authService->issueM2mToken($apiKey);
-        $meta = $this->authService->getApiKeyMeta($apiKey);
+        if ($this->authService->keyRequiresNim($apiKey) && $nim === '') {
+            return $this->json($response, [
+                'status' => 'error',
+                'message' => 'nim is required for M2M authentication.',
+            ], 400);
+        }
+
+        $resolved = $this->authService->resolveM2mMeta($apiKey, $nim);
+        if ($resolved === null) {
+            return $this->json($response, [
+                'status' => 'error',
+                'message' => 'Unauthorized: nim is not registered for this API key.',
+            ], 401);
+        }
+
+        $token = $this->authService->issueM2mToken($apiKey, $nim);
+
+        $logSubject = $apiKey . '#' . $resolved['nim'];
 
         $this->logger->log(
-            $apiKey,
+            $logSubject,
             'sso_m2m',
-            $meta['student'] ?? null,
-            json_encode(['grant_type' => 'client_credentials'], JSON_THROW_ON_ERROR)
+            $resolved['nim'],
+            json_encode([
+                'grant_type' => 'client_credentials',
+                'team' => $resolved['team'],
+                'nim' => $resolved['nim'],
+            ], JSON_THROW_ON_ERROR)
         );
+
+        $app = [
+            'client_id' => $apiKey,
+            'name' => $resolved['app_name'],
+            'team' => $resolved['team'],
+            'nim' => $resolved['nim'],
+        ];
 
         return $this->json($response, [
             'status' => 'success',
@@ -66,11 +95,7 @@ final class AuthController
             'jwks_uri' => '/api/v1/auth/jwks',
             'token' => $token,
             'expires_in' => $this->jwtTtl,
-            'app' => [
-                'client_id' => $apiKey,
-                'name' => $meta['app_name'] ?? $meta['student'],
-                'team' => $meta['team'],
-            ],
+            'app' => $app,
         ]);
     }
 

@@ -105,7 +105,7 @@ docker compose up --build -d
 | `GET` | `/health` | — | Health check JSON |
 | `GET` | `/api/v1/auth/jwks` | — | Public keys (RS256) untuk verify JWT |
 | `GET` | `/.well-known/jwks.json` | — | Alias JWKS (OIDC-style) |
-| `POST` | `/api/v1/auth/token` | Body | **M2M:** `{ "api_key": "KEY-MHS-01" }` |
+| `POST` | `/api/v1/auth/token` | Body | **M2M:** `{ "api_key": "KEY-MHS-25", "nim": "102022430014" }` |
 | | | | **User:** `{ "email": "warga01@ktp.iae.id", "password": "..." }` |
 | `POST` | `/soap/v1/audit` | Bearer M2M | Audit XML generic (lihat skema di bawah) |
 | `POST` | `/api/v1/messages/publish` | Bearer M2M | Publish ke `iae.central.exchange` |
@@ -230,7 +230,7 @@ Sesuaikan via `.env`. Pantau: `docker stats iae-central-mock iae-rabbitmq`
 | Mock API | `http://mock-server:8080` | `http://localhost:8080` |
 | RabbitMQ AMQP | `rabbitmq:5672` | `localhost:5672` |
 
-1. **Service call:** `POST /api/v1/auth/token` dengan `api_key` tim → simpan Bearer token.  
+1. **Service call:** `POST /api/v1/auth/token` dengan `api_key` + `nim` → simpan Bearer token.  
 2. **User login (opsional):** `email` + `password` warga → JWT berisi `profile`.  
 3. **Verify JWT:** ambil public key dari `GET /api/v1/auth/jwks` → verify RS256 di Laravel → baca `profile` lokal.  
 4. **SOAP:** kirim XML ke `/soap/v1/audit` — jangan pakai JSON.  

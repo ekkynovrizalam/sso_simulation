@@ -65,6 +65,8 @@ final class SoapAuditController
             json_encode([
                 'token_type' => $identity['token_type'],
                 'team_id' => $audit['team_id'],
+                'token_team' => $identity['team'],
+                'nim' => $identity['nim'] ?? null,
                 'activity_name' => $audit['activity_name'],
                 'log_content' => $audit['log_content'],
                 'receipt_number' => $receipt,

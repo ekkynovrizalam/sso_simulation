@@ -55,6 +55,7 @@ final class MessageController
             'subject' => $identity['subject'],
             'api_key' => $identity['api_key'],
             'team' => $identity['team'],
+            'nim' => $identity['nim'] ?? null,
             'profile' => $identity['profile'],
             'routing_key' => $routingKey,
             'message' => is_string($message) ? ['body' => $message] : $message,
@@ -74,7 +75,11 @@ final class MessageController
             $this->authService->logSubject($identity),
             'rabbitmq',
             $this->authService->logDisplayName($identity),
-            json_encode(['routing_key' => $routingKey], JSON_THROW_ON_ERROR)
+            json_encode([
+                'routing_key' => $routingKey,
+                'team' => $identity['team'],
+                'nim' => $identity['nim'] ?? null,
+            ], JSON_THROW_ON_ERROR)
         );
 
         return $this->json($response, [
