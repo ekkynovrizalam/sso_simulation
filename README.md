@@ -223,6 +223,29 @@ Sesuaikan via `.env`. Pantau: `docker stats iae-central-mock iae-rabbitmq`
 
 ---
 
+## Backup & restore
+
+Script di `scripts/` membackup data **tanpa menghentikan container** (SQLite hot backup via sidecar read-only):
+
+```bash
+# Backup (default: backups/iae-central-backup-YYYYMMDD-HHMMSS.tar.gz)
+./scripts/backup.sh
+
+# Backup ke path tertentu, tanpa file konfigurasi host
+./scripts/backup.sh -o ~/iae-backup.tar.gz
+./scripts/backup.sh --no-config
+
+# Restore — mock-server di-stop sebentar; RabbitMQ tetap jalan
+./scripts/restore.sh backups/iae-central-backup-20260619-120000.tar.gz
+./scripts/restore.sh -y backups/iae-central-backup-20260619-120000.tar.gz
+```
+
+Isi arsip: `activity.db` (snapshot konsisten), JWT keys (`keys/*.pem`), `manifest.json`, plus `.env` dan `config/*.php` dari host (kecuali `--no-config`).
+
+Folder `backups/` di-ignore Git — **jangan** commit arsip (berisi private key & log aktivitas).
+
+---
+
 ## Integrasi dari Laravel mahasiswa
 
 | Kebutuhan | Host di Docker network | Host di laptop |
